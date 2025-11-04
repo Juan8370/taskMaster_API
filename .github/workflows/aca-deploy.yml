@@ -1,0 +1,121 @@
+name: Build and deploy to Azure Container Apps (Mexico, free allowance)
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'Dockerfile'
+      - 'app/**'
+      - 'requeriments.txt'
+      - '.github/workflows/aca-deploy.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: taskmaster-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy/Update Container App in Mexico (mexicocentral)
+        uses: azure/cli@v2
+        env:
+          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          LOCATION: ${{ secrets.AZURE_LOCATION }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          APP_NAME: ${{ secrets.AZURE_CONTAINERAPPS_NAME }}
+          ENV_NAME: ${{ secrets.AZURE_CONTAINERAPPS_ENV_NAME }}
+          LAW_NAME: ${{ secrets.AZURE_LOG_ANALYTICS_NAME }}
+          SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+          ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.APP_ACCESS_TOKEN_EXPIRE_MINUTES }}
+          DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
+          IMAGE_REF: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+        with:
+          inlineScript: |
+            set -e
+            # Defaults if not provided
+            LOCATION=${LOCATION:-mexicocentral}
+            ENV_NAME=${ENV_NAME:-taskmaster-aca-env}
+            LAW_NAME=${LAW_NAME:-taskmaster-law}
+            APP_NAME=${APP_NAME:-taskmaster-api}
+
+            echo "Using RG=$RG LOCATION=$LOCATION ENV_NAME=$ENV_NAME LAW_NAME=$LAW_NAME APP_NAME=$APP_NAME IMAGE=$IMAGE_REF"
+
+            # Ensure required providers/extensions
+            az extension add --name containerapp --upgrade
+            az provider register --namespace Microsoft.App --wait
+            az provider register --namespace Microsoft.OperationalInsights --wait
+
+            # Create RG if missing
+            az group create -n "$RG" -l "$LOCATION"
+
+            # Create or get Log Analytics workspace (for Container Apps env)
+            if ! az monitor log-analytics workspace show -g "$RG" -n "$LAW_NAME" >/dev/null 2>&1; then
+              az monitor log-analytics workspace create -g "$RG" -n "$LAW_NAME" -l "$LOCATION"
+            fi
+            LAW_ID=$(az monitor log-analytics workspace show -g "$RG" -n "$LAW_NAME" --query customerId -o tsv)
+            LAW_KEY=$(az monitor log-analytics workspace get-shared-keys -g "$RG" -n "$LAW_NAME" --query primarySharedKey -o tsv)
+
+            # Create or get Container Apps Environment
+            if ! az containerapp env show -g "$RG" -n "$ENV_NAME" >/dev/null 2>&1; then
+              az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOCATION" \
+                --logs-workspace-id "$LAW_ID" --logs-workspace-key "$LAW_KEY"
+            fi
+
+            # Create or update the Container App
+            if az containerapp show -g "$RG" -n "$APP_NAME" >/dev/null 2>&1; then
+              az containerapp update -g "$RG" -n "$APP_NAME" \
+                --image "$IMAGE_REF" \
+                --set-env-vars SECRET_KEY="$SECRET_KEY" ACCESS_TOKEN_EXPIRE_MINUTES="$ACCESS_TOKEN_EXPIRE_MINUTES" DATABASE_URL="$DATABASE_URL" \
+                --registry-server "$ACR_LOGIN_SERVER" --registry-username "$ACR_USERNAME" --registry-password "$ACR_PASSWORD"
+            else
+              az containerapp create -g "$RG" -n "$APP_NAME" -l "$LOCATION" \
+                --environment "$ENV_NAME" \
+                --image "$IMAGE_REF" \
+                --target-port 8000 \
+                --ingress external \
+                --min-replicas 0 --max-replicas 1 \
+                --registry-server "$ACR_LOGIN_SERVER" --registry-username "$ACR_USERNAME" --registry-password "$ACR_PASSWORD" \
+                --env-vars SECRET_KEY="$SECRET_KEY" ACCESS_TOKEN_EXPIRE_MINUTES="$ACCESS_TOKEN_EXPIRE_MINUTES" DATABASE_URL="$DATABASE_URL"
+            fi
+
+            # Show FQDN
+            FQDN=$(az containerapp show -g "$RG" -n "$APP_NAME" --query properties.configuration.ingress.fqdn -o tsv)
+            echo "Deployed. Public URL: https://$FQDN"

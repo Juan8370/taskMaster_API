@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TaskMaster</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+  <style>body{display:flex;align-items:center;justify-content:center;height:100vh}</style>
+  <script src="/shared.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (getToken()) {
+        location.replace('/notes.html')
+      } else {
+        location.replace('/login.html')
+      }
+    })
+  </script>
+  <noscript>
+    <meta http-equiv="refresh" content="0; url=/login.html" />
+  </noscript>
+  </head>
+  <body>
+    <div class="container">
+      <p>Redirigiendo...</p>
+      <p>Si no ocurre nada, <a href="/login.html">haz clic aquí</a>.</p>
+    </div>
+  </body>
+  </html>

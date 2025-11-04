@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+python-jose
+passlib[bcrypt]
+# pin bcrypt to <4.0 to avoid passlib detection issues with bcrypt 4.x
+bcrypt<4.0
+httpx
+pytest
+email-validator
+psycopg[binary]

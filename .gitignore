@@ -1,0 +1,91 @@
+# .gitignore for taskMaster_API
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Env files
+.env
+.env.*.local
+.env.local
+# Permitimos versionar la plantilla de ejemplo
+# (si necesitas excluirla temporalmente, usa git update-index --assume-unchanged)
+.env.example
+
+# Build / output
+dist/
+build/
+out/
+lib/
+www/
+coverage/
+.nyc_output/
+*.tgz
+
+# TypeScript
+*.tsbuildinfo
+
+# Databases / local data
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+.project
+.metadata/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Misc caches / temp
+tmp/
+temp/
+.cache/
+.history/
+dist-*/ 
+.vagrant/
+__pycache__/
+__pycache__
+*.pyc
+
+# Python virtual env
+.venv/
+notasImportantes.txt
+# Docker overrides / secrets
+docker-compose.override.yml
+docker-compose.*.yml
+.env.docker
+
+# Ignore local test/report artifacts
+test-results/
+coverage-reports/
+reports/
+
+# Ignore sensitive/secret files (adjust as needed)
+secret-*.key
+*.pem
+/*.key
+
+/azure-credentials.json
+/.env.example

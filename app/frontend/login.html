@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TaskMaster - Login</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/shared.js" defer></script>
+  <script defer>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (getToken()) {
+        // Si ya hay sesión, ir a notas
+        location.replace('/notes.html')
+        return
+      }
+      const form = document.getElementById('login-form')
+      const toggle = document.getElementById('toggle-pass')
+      toggle.addEventListener('click', () => {
+        const input = document.getElementById('password')
+        input.type = input.type === 'password' ? 'text' : 'password'
+        toggle.textContent = input.type === 'password' ? '👁' : '🙈'
+        input.focus()
+      })
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const email = document.getElementById('email').value.trim()
+        const password = document.getElementById('password').value
+        const btn = document.getElementById('login-btn')
+        setButtonLoading(btn, true, 'Entrando...')
+        try {
+          const { access_token } = await api.login(email, password)
+          setToken(access_token)
+          showToast('Bienvenido 👋', 'success')
+          setTimeout(() => location.assign('/notes.html'), 300)
+        } catch (err) {
+          showToast(err.message || 'Error de autenticación', 'error')
+        } finally {
+          setButtonLoading(btn, false)
+        }
+      })
+    })
+  </script>
+</head>
+<body>
+  <div class="container auth-container">
+    <header>
+      <h1>TaskMaster</h1>
+      <p class="muted">Inicia sesión para continuar</p>
+    </header>
+
+    <main>
+      <form id="login-form" class="card" novalidate>
+        <label>Email</label>
+        <input type="email" id="email" placeholder="email@example.com" autocomplete="email" required />
+        <label>Contraseña</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="password" placeholder="********" autocomplete="current-password" required style="flex:1" />
+          <button type="button" id="toggle-pass" class="secondary" aria-label="Mostrar u ocultar contraseña">👁</button>
+        </div>
+        <button id="login-btn" type="submit" class="primary">Iniciar sesión</button>
+        <p class="muted" style="margin-top:8px">¿No tienes cuenta? <a href="/register.html">Regístrate</a></p>
+      </form>
+    </main>
+
+    <footer>
+      <small>TaskMaster ©</small>
+    </footer>
+  </div>
+</body>
+</html>

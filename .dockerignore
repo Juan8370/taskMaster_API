@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[co]
+*.egg-info/
+.eggs/
+.venv/
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# pytest cache
+.pytest_cache/
+
+# Local files
+*.db
+.env
+
+# Node/npm (por si acaso)
+node_modules/

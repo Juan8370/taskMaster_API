@@ -1,0 +1,92 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Run tests (quick gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requeriments.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requeriments.txt
+      - name: Run tests
+        run: python -m pytest -q
+
+  deploy:
+    name: Build image in ACR and deploy to ACA
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    env:
+      AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      CONTAINER_APP_NAME: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
+      IMAGE_NAME: taskmaster-api
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Install Azure CLI containerapp extension
+        run: |
+          az extension add --name containerapp --upgrade
+      - name: Sanitize input variables
+        run: |
+          AZURE_RESOURCE_GROUP=$(echo -n "$AZURE_RESOURCE_GROUP" | tr -d '\r')
+          CONTAINER_APP_NAME=$(echo -n "$CONTAINER_APP_NAME" | tr -d '\r')
+          ACR_NAME=$(echo -n "$ACR_NAME" | tr -d '\r')
+          echo "AZURE_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" >> $GITHUB_ENV
+          echo "CONTAINER_APP_NAME=$CONTAINER_APP_NAME" >> $GITHUB_ENV
+          echo "ACR_NAME=$ACR_NAME" >> $GITHUB_ENV
+      - name: Resolve ACR login server
+        id: acr
+        run: |
+          LOGIN_SERVER=$(az acr show -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" --query loginServer -o tsv | tr -d '\r')
+          echo "login_server=$LOGIN_SERVER" >> $GITHUB_OUTPUT
+      - name: Configure registry credentials on Container App (once)
+        run: |
+          ACR_USER=$(az acr credential show -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" --query username -o tsv | tr -d '\r')
+          ACR_PASS=$(az acr credential show -n "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" --query passwords[0].value -o tsv | tr -d '\r')
+          az containerapp registry set -g "$AZURE_RESOURCE_GROUP" -n "$CONTAINER_APP_NAME" \
+            --server "${{ steps.acr.outputs.login_server }}" \
+            --username "$ACR_USER" \
+            --password "$ACR_PASS"
+      - name: Check Container App exists
+        run: |
+          az containerapp show -g "$AZURE_RESOURCE_GROUP" -n "$CONTAINER_APP_NAME" --query id -o tsv
+      - name: Build image in ACR (cloud build)
+        run: |
+          az acr build -r "$ACR_NAME" -g "$AZURE_RESOURCE_GROUP" -t "$IMAGE_NAME:$IMAGE_TAG" .
+      - name: Echo image to deploy
+        run: echo "IMAGE=${{ steps.acr.outputs.login_server }}/$IMAGE_NAME:$IMAGE_TAG"
+      - name: Update Container App to new image
+        run: |
+          az containerapp update -g "$AZURE_RESOURCE_GROUP" -n "$CONTAINER_APP_NAME" \
+            --image "${{ steps.acr.outputs.login_server }}/$IMAGE_NAME:$IMAGE_TAG"
+      - name: Show Container App FQDN
+        run: |
+          FQDN=$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n "$CONTAINER_APP_NAME" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "FQDN=https://$FQDN" >> $GITHUB_ENV
+          echo "Deployment URL: https://$FQDN"

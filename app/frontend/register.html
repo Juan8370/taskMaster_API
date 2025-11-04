@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TaskMaster - Registro</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/shared.js" defer></script>
+  <script defer>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (getToken()) {
+        location.replace('/notes.html')
+        return
+      }
+      const form = document.getElementById('register-form')
+      const toggle = document.getElementById('toggle-pass')
+      toggle.addEventListener('click', () => {
+        const input = document.getElementById('password')
+        input.type = input.type === 'password' ? 'text' : 'password'
+        toggle.textContent = input.type === 'password' ? '👁' : '🙈'
+        input.focus()
+      })
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const email = document.getElementById('email').value.trim()
+        const password = document.getElementById('password').value
+        const btn = document.getElementById('register-btn')
+        setButtonLoading(btn, true, 'Creando...')
+        try {
+          await api.register(email, password)
+          showToast('Registro exitoso. Ahora inicia sesión.', 'success')
+          setTimeout(() => location.assign('/login.html'), 400)
+        } catch (err) {
+          showToast(err.message || 'No fue posible registrar', 'error')
+        } finally {
+          setButtonLoading(btn, false)
+        }
+      })
+    })
+  </script>
+</head>
+<body>
+  <div class="container auth-container">
+    <header>
+      <h1>TaskMaster</h1>
+      <p class="muted">Crea tu cuenta</p>
+    </header>
+
+    <main>
+      <form id="register-form" class="card" novalidate>
+        <label>Email</label>
+        <input type="email" id="email" placeholder="email@example.com" autocomplete="email" required />
+        <label>Contraseña</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" minlength="8" required style="flex:1" />
+          <button type="button" id="toggle-pass" class="secondary" aria-label="Mostrar u ocultar contraseña">👁</button>
+        </div>
+        <button id="register-btn" type="submit" class="primary">Crear cuenta</button>
+        <p class="muted" style="margin-top:8px">¿Ya tienes cuenta? <a href="/login.html">Inicia sesión</a></p>
+      </form>
+    </main>
+
+    <footer>
+      <small>TaskMaster ©</small>
+    </footer>
+  </div>
+</body>
+</html>

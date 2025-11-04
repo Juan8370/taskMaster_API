@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TaskMaster - Notas</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/shared.js" defer></script>
+  <script defer>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!ensureAuthOrRedirect()) return
+
+      const state = { page: 1, limit: 10, total: 0 }
+      const listEl = document.getElementById('notes-list')
+  const pageInfo = document.getElementById('page-info')
+      const limitSelect = document.getElementById('limit-select')
+      const btnPrev = document.getElementById('btn-prev')
+      const btnNext = document.getElementById('btn-next')
+  const searchInput = document.getElementById('search-input')
+
+      // Modal controls
+  const modal = document.getElementById('modal')
+  const openBtn = document.getElementById('btn-add')
+  const cancelBtn = document.getElementById('modal-cancel')
+  const form = document.getElementById('note-form')
+  let lastFocus = null
+
+      function openModal () {
+        lastFocus = document.activeElement
+        modal.classList.remove('hidden')
+        requestAnimationFrame(() => modal.classList.add('open'))
+        const first = document.getElementById('note-title')
+        first && first.focus()
+      }
+      function closeModal () {
+        modal.classList.remove('open')
+        modal.classList.add('closing')
+        setTimeout(() => {
+          modal.classList.remove('closing')
+          modal.classList.add('hidden')
+          if (lastFocus) { try { lastFocus.focus() } catch {} }
+        }, 220)
+      }
+
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal() })
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal() })
+      openBtn.addEventListener('click', openModal)
+      cancelBtn.addEventListener('click', closeModal)
+
+      async function render () {
+        // loading skeleton
+        listEl.innerHTML = ''
+        for (let i = 0; i < state.limit; i++) {
+          const li = document.createElement('li')
+          li.className = 'note loading'
+          li.innerHTML = '<div class="skeleton"></div>'
+          listEl.appendChild(li)
+        }
+        try {
+          const data = await api.getNotes({ page: state.page, limit: state.limit, q: state.q })
+          const items = Array.isArray(data) ? data : (data.items || [])
+          state.total = Array.isArray(data) ? items.length : (data.total || items.length)
+          listEl.innerHTML = ''
+          if (!items.length) {
+            const msg = state.q ? 'No hay resultados para la búsqueda' : 'No hay notas aún'
+            listEl.innerHTML = `<li class="empty">${msg}</li>`
+          } else {
+            items.forEach((n, idx) => {
+              const li = document.createElement('li')
+              li.className = 'note'
+              li.style.animationDelay = `${idx * 40}ms`
+              const title = escapeHTML(n.title || '')
+              const desc = escapeHTML(n.description || '')
+              const tooLong = (n.description || '').length > 120
+              li.innerHTML = `
+                <div class="note-main">
+                  <div class="note-title">${title}</div>
+                  <span class="title">${desc}</span>
+                </div>
+                <div class="note-actions">
+                  ${tooLong ? '<button class="link toggle" type="button">Ver más</button>' : ''}
+                  <button class="danger" data-id="${n.id}">Eliminar</button>
+                </div>
+              `
+              listEl.appendChild(li)
+            })
+          }
+          const totalPages = Math.max(1, Math.ceil(state.total / state.limit))
+          pageInfo.textContent = `Página ${state.page} / ${totalPages}`
+          btnPrev.disabled = state.page <= 1
+          btnNext.disabled = state.page >= totalPages
+        } catch (err) {
+          listEl.innerHTML = '<li class="empty">Error al cargar notas</li>'
+          showToast(err.message || 'Error cargando notas', 'error')
+        }
+      }
+
+      limitSelect.addEventListener('change', () => {
+        state.limit = parseInt(limitSelect.value, 10)
+        state.page = 1
+        render()
+      })
+      // debounce search
+      let sTO
+      searchInput.addEventListener('input', () => {
+        clearTimeout(sTO)
+        sTO = setTimeout(() => {
+          state.q = searchInput.value.trim() || undefined
+          state.page = 1
+          render()
+        }, 300)
+      })
+      btnPrev.addEventListener('click', () => { if (state.page > 1) { state.page--; render() } })
+      btnNext.addEventListener('click', () => { state.page++; render() })
+
+      listEl.addEventListener('click', async (e) => {
+        // Toggle expand/collapse
+        const toggle = e.target.closest('button.toggle')
+        if (toggle) {
+          const li = e.target.closest('li')
+          const expanded = li.classList.toggle('expanded')
+          toggle.textContent = expanded ? 'Ver menos' : 'Ver más'
+          return
+        }
+        // Delete note
+        const btn = e.target.closest('button[data-id]')
+        if (!btn) return
+        const id = btn.getAttribute('data-id')
+        setButtonLoading(btn, true, 'Eliminando...')
+        try {
+          await api.deleteNote(id)
+          showToast('Nota eliminada', 'success')
+          render()
+        } catch (err) {
+          showToast(err.message || 'No se pudo eliminar', 'error')
+        }
+        finally { setButtonLoading(btn, false) }
+      })
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const input = document.getElementById('note-title')
+        const title = (document.getElementById('note-heading')?.value || '').trim() || input.value.split('\n')[0].slice(0,80) || 'Sin título'
+        const description = input.value.trim()
+        if (!description) return
+        const submitBtn = form.querySelector('button[type="submit"]')
+        setButtonLoading(submitBtn, true, 'Creando...')
+        try {
+          await api.createNote(title, description)
+          input.value = ''
+          closeModal()
+          showToast('Nota creada', 'success')
+          state.page = 1
+          render()
+        } catch (err) {
+          showToast(err.message || 'No se pudo crear', 'error')
+        } finally {
+          setButtonLoading(submitBtn, false)
+        }
+      })
+
+  document.getElementById('btn-refresh').addEventListener('click', () => { setButtonLoading(document.getElementById('btn-refresh'), true, 'Actualizando...'); render().finally(() => setButtonLoading(document.getElementById('btn-refresh'), false)) })
+      document.getElementById('btn-logout').addEventListener('click', () => {
+        clearToken()
+        location.replace('/login.html')
+      })
+
+      // Initial render
+      render()
+    })
+  </script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Mis notas</h1>
+      <div class="actions">
+        <button id="btn-refresh" class="secondary">Refrescar</button>
+        <button id="btn-add" class="primary">Crear nota</button>
+        <button id="btn-logout" class="secondary">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="controls" style="flex-wrap:wrap">
+        <input id="search-input" type="text" placeholder="Buscar por título..." style="flex:1;min-width:220px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:#0a1424;color:#dbe5f0" />
+        <div class="pagination-controls">
+          <button id="btn-prev">« Prev</button>
+          <span id="page-info">Página 1</span>
+          <button id="btn-next">Next »</button>
+          <label>Por página:
+            <select id="limit-select">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <ul id="notes-list"></ul>
+    </main>
+
+    <!-- modal -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-content">
+        <h3 id="modal-title">Crear nota</h3>
+        <form id="note-form">
+          <input type="text" id="note-heading" placeholder="Título de la nota" autocomplete="off" style="margin-bottom:8px" />
+          <textarea id="note-title" placeholder="Descripción (admite múltiples líneas)" rows="6" required></textarea>
+          <div class="modal-actions">
+            <button type="submit">Crear</button>
+            <button type="button" id="modal-cancel">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <footer>
+      <small>TaskMaster ©</small>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,37 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: taskmaster_db
+    environment:
+      POSTGRES_DB: taskmaster
+      POSTGRES_USER: taskmaster
+      POSTGRES_PASSWORD: taskmaster
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskmaster -d taskmaster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: taskmaster_app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # SQLAlchemy DSN using psycopg v3
+      DATABASE_URL: postgresql+psycopg://taskmaster:taskmaster@db:5432/taskmaster
+      SECRET_KEY: change-me-in-prod
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    ports:
+      - "8000:8000"
+    # optional: live reload disabled in container by default
+    # command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  pgdata:
